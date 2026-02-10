@@ -2,13 +2,19 @@ import re
 import json
 import zipfile
 import pandas as pd
-import streamlit as st
+import streamlit as st 
 from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Iterator, Tuple
 
 # Internal Imports
+# -- Setup Env from Secrets for Streamlit Cloud --
+if "GOOGLE_API_KEY" in st.secrets:
+    os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+if "TAVILY_API_KEY" in st.secrets:
+    os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
+
 from app_backend import app
 
 # --- Helpers ---

@@ -87,7 +87,11 @@ class State(TypedDict):
 
 # --- Core Logic ---
 
-llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0)
+try:
+    llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0)
+except Exception as e:
+    llm = None
+    print(f"WARNING: LLM init failed (likely missing API key): {e}")
 
 def router_node(state: State) -> dict:
     """Decides if research is needed and sets the operational mode."""

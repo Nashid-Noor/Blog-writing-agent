@@ -14,5 +14,5 @@ try:
         print("Skipping live generation (No GOOGLE_API_KEY found)")
         
     print("Test passed!")
-except Exception as e:
+except Exception as e: 
     print(f"Test failed: {e}")

@@ -2,7 +2,7 @@
 
 An AI-powered application that researches, plans, and writes technical blog posts.
 
-## Features
+## Features 
 - **Research**: Autonomously gathers information from the web.
 - **Planning**: Creates structured outlines based on best practices.
 - **Writing**: Generates content section-by-section.
