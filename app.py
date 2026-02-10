@@ -70,7 +70,11 @@ def render_preview(md: str):
             st.markdown(part)
 
 def load_history() -> List[Path]:
-    return sorted(Path(".").glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return sorted(
+        [p for p in Path(".").glob("*.md") if p.name.lower() != "readme.md"],
+        key=lambda p: p.stat().st_mtime, 
+        reverse=True
+    )
 
 # --- UI Setup ---
 
