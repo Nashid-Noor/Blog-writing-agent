@@ -18,7 +18,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 load_dotenv()
 
 # --- Configuration ---
-LLM_MODEL = "gemini-2.5-flash"
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-1.5-flash"
 IMAGE_MODEL = "gemini-2.0-flash-exp"
 
 # --- Data Models ---
@@ -85,13 +86,60 @@ class State(TypedDict):
     image_specs: List[dict]
     final: str
 
-# --- Core Logic ---
+# --- Core Logic & Fallback & Key Rotation ---
 
-try:
-    llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0)
-except Exception as e:
-    llm = None
-    print(f"WARNING: LLM init failed (likely missing API key): {e}")
+def get_llm(model_name: str, api_key: str = None):
+    """Instantiates the LLM with the given model name and specific API key."""
+    # If no key provided, let it try default env var or fail
+    if api_key:
+        return ChatGoogleGenerativeAI(model=model_name, temperature=0, google_api_key=api_key)
+    return ChatGoogleGenerativeAI(model=model_name, temperature=0)
+
+def get_keys():
+    """Returns a list of available API keys."""
+    keys = []
+    if os.getenv("GOOGLE_API_KEY"):
+        keys.append(os.getenv("GOOGLE_API_KEY"))
+    if os.getenv("GOOGLE_API_KEY_2"):
+        keys.append(os.getenv("GOOGLE_API_KEY_2"))
+    return keys if keys else [None] # Return at least one None to try default env
+
+def robust_call(messages: list, output_structure=None):
+    """
+    Calls the LLM with the PRIMARY_MODEL using available keys.
+    If a key fails with quota error, rotates to the next key.
+    If ALL keys fail for PRIMARY_MODEL, falls back to FALLBACK_MODEL (standard env key).
+    """
+    available_keys = get_keys()
+    
+    # -- Strategy 1: Primary Model + Key Rotation --
+    for i, key in enumerate(available_keys):
+        try:
+            model = get_llm(PRIMARY_MODEL, api_key=key)
+            if output_structure:
+                chain = model.with_structured_output(output_structure)
+                return chain.invoke(messages)
+            else:
+                return model.invoke(messages)
+        except Exception as e:
+            error_str = str(e)
+            if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
+                print(f"⚠️ Quota exceeded for {PRIMARY_MODEL} on Key #{i+1}. Rotating...")
+                continue # Try next key
+            else:
+                raise e # Fatal error (not quota)
+
+    # -- Strategy 2: Fallback Model (if all primary keys exhausted) --
+    print(f"⚠️ All keys exhausted for {PRIMARY_MODEL}. Falling back to {FALLBACK_MODEL}...")
+    try:
+        model = get_llm(FALLBACK_MODEL)
+        if output_structure:
+            chain = model.with_structured_output(output_structure)
+            return chain.invoke(messages)
+        else:
+            return model.invoke(messages)
+    except Exception as e:
+        raise e # Ultimate failure
 
 def router_node(state: State) -> dict:
     """Decides if research is needed and sets the operational mode."""
@@ -101,11 +149,13 @@ def router_node(state: State) -> dict:
         "If researching, provide 3-10 targeted queries."
     )
     
-    decider = llm.with_structured_output(RouterDecision)
-    decision = decider.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Topic: {state['topic']}\nDate: {state['as_of']}")
-    ])
+    decision = robust_call(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Topic: {state['topic']}\nDate: {state['as_of']}")
+        ],
+        output_structure=RouterDecision
+    )
 
     recency_map = {"open_book": 7, "hybrid": 45, "closed_book": 3650}
     return {
@@ -153,11 +203,13 @@ def research_node(state: State) -> dict:
         "Filter for relevance and authority. Deduplicate by URL."
     )
     
-    extractor = llm.with_structured_output(EvidencePack)
-    pack = extractor.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Date: {state['as_of']}\nResults:\n{raw_results}")
-    ])
+    pack = robust_call(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Date: {state['as_of']}\nResults:\n{raw_results}")
+        ],
+        output_structure=EvidencePack
+    )
 
     # Dedup and filter by date if strictly open_book
     evidence_map = {e.url: e for e in pack.evidence if e.url}
@@ -179,13 +231,15 @@ def orchestrator_node(state: State) -> dict:
         "For 'open_book' mode, focus on news/analysis relying on provided evidence."
     )
     
-    planner = llm.with_structured_output(Plan)
     evidence_dump = [e.model_dump() for e in state.get("evidence", [])][:16]
     
-    plan = planner.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Topic: {state['topic']}\nMode: {state.get('mode')}\nEvidence:\n{evidence_dump}")
-    ])
+    plan = robust_call(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Topic: {state['topic']}\nMode: {state.get('mode')}\nEvidence:\n{evidence_dump}")
+        ],
+        output_structure=Plan
+    )
     
     if state.get("mode") == "open_book":
         plan.blog_kind = "news_roundup"
@@ -214,12 +268,14 @@ def worker_node(payload: dict) -> dict:
         "Cite sources using Markdown links if required."
     )
     
-    content = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Blog: {plan.blog_title}\nSection: {task.title}\nBullets: {task.bullets}\nEvidence: {evidence}")
-    ]).content.strip()
+    response = robust_call(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Blog: {plan.blog_title}\nSection: {task.title}\nBullets: {task.bullets}\nEvidence: {evidence}")
+        ]
+    )
     
-    return {"sections": [(task.id, content)]}
+    return {"sections": [(task.id, response.content.strip())]}
 
 def merge_content(state: State) -> dict:
     ordered = [md for _, md in sorted(state["sections"], key=lambda x: x[0])]
@@ -233,11 +289,13 @@ def decide_images(state: State) -> dict:
         "Max 3 images. Return the modified markdown and image specifications."
     )
     
-    planner = llm.with_structured_output(GlobalImagePlan)
-    image_plan = planner.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=state["merged_md"])
-    ])
+    image_plan = robust_call(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=state["merged_md"])
+        ],
+        output_structure=GlobalImagePlan
+    )
     
     return {
         "md_with_placeholders": image_plan.md_with_placeholders,

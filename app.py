@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Iterator, Tuple
 # -- Setup Env from Secrets for Streamlit Cloud --
 if "GOOGLE_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+if "GOOGLE_API_KEY_2" in st.secrets:
+    os.environ["GOOGLE_API_KEY_2"] = st.secrets["GOOGLE_API_KEY_2"]
 if "TAVILY_API_KEY" in st.secrets:
     os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
 
