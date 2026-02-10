@@ -118,9 +118,17 @@ if start_run and topic:
             status_container.write(f"Completed step: **{node}**")
             
             # Update metrics
+            plan = state.get("plan")
+            task_count = 0
+            if plan:
+                if isinstance(plan, dict):
+                    task_count = len(plan.get("tasks", []))
+                else:
+                    task_count = len(getattr(plan, "tasks", []))
+            
             metrics.json({
                 "mode": state.get("mode"),
-                "tasks": len(state.get("plan", {}).get("tasks", []) or []),
+                "tasks": task_count,
                 "evidence": len(state.get("evidence", []) or []),
             })
             
