@@ -19,7 +19,6 @@ load_dotenv()
 
 # --- Configuration ---
 PRIMARY_MODEL = "gemini-2.5-flash"
-FALLBACK_MODEL = "gemini-1.5-flash"
 IMAGE_MODEL = "gemini-2.0-flash-exp"
 
 # --- Data Models ---
@@ -129,17 +128,8 @@ def robust_call(messages: list, output_structure=None):
             else:
                 raise e # Fatal error (not quota)
 
-    # -- Strategy 2: Fallback Model (if all primary keys exhausted) --
-    print(f"⚠️ All keys exhausted for {PRIMARY_MODEL}. Falling back to {FALLBACK_MODEL}...")
-    try:
-        model = get_llm(FALLBACK_MODEL)
-        if output_structure:
-            chain = model.with_structured_output(output_structure)
-            return chain.invoke(messages)
-        else:
-            return model.invoke(messages)
-    except Exception as e:
-        raise e # Ultimate failure
+    # -- Both Keys Exhausted --
+    raise RuntimeError(f"All API keys exhausted for {PRIMARY_MODEL}. Please wait or add more keys.")
 
 def router_node(state: State) -> dict:
     """Decides if research is needed and sets the operational mode."""
