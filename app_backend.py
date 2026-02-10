@@ -18,7 +18,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 load_dotenv()
 
 # --- Configuration ---
-LLM_MODEL = "gemini-1.5-flash"
+LLM_MODEL = "gemini-1.5-flash-001"
 IMAGE_MODEL = "gemini-2.0-flash-exp"
 
 # --- Data Models ---
