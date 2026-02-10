@@ -143,7 +143,21 @@ if start_run and topic:
             status_container.update(label="Complete", state="complete", expanded=False)
             
         elif kind == "error":
-            st.error(f"Execution failed: {payload}")
+            # Handle Quota Exhaustion Gracefully
+            error_msg = str(payload)
+            if "exhausted" in error_msg.lower() or "quota" in error_msg.lower() or "429" in error_msg:
+                st.error("⚠️ All API Keys have hit their limit for `gemini-2.5-flash`.")
+                
+                # Dynamic Key Injection
+                with st.form("recovery_form"):
+                    new_key = st.text_input("Enter a temporary Google API Key to continue:", type="password")
+                    if st.form_submit_button("Retry with New Key"):
+                         if new_key:
+                            os.environ["GOOGLE_API_KEY"] = new_key
+                            st.success("Key added! Please click 'Start Generation' again.")
+                            st.rerun()
+            else:
+                st.error(f"Execution failed: {payload}")
 
 # Result Display
 if "result" in st.session_state:
